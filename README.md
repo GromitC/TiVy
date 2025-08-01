@@ -1,4 +1,4 @@
-
+## (Work under construction and preparation for IEEE VIS 2025)
 # Jupyter-Time-Series-Visualization
 Scalable Time Series Visualization in Jupyter Notebook
 ![](time-series-demo.gif)
