@@ -693,89 +693,78 @@ class TiVy():
         output['result'] = result
         return output
                 
-    # def visualize(self,clusters,labels = None,n_columns=5,chart_width=5,chart_height=2,alpha=0.01,show_main_trend=True,dpi=300):
-    #     color_codes = ['#6388b4', '#ffae34', '#ef6f6a', '#8cc2ca', '#55ad89', '#c3bc3f', '#bb7693', '#baa094', '#a9b5ae', '#767676']
-    #     color = {}
-    #     for i,l in enumerate(np.unique(labels)):
-    #         color[l] = color_codes[i % len(color_codes)]
-    #     print(color)
-    #     result = []
-    #     max_size = np.max([len(c[0]) for c in clusters])
-    #     min_size = np.min([len(c[0]) for c in clusters])
-    #     for c in clusters:
-    #         if labels is not None:
-    #             result.append({'data':c,'color':color[c[3]]})
-    #         else:
-    #             result.append({'data':c})
-                
-    #     n_chunks = self.chunks
-    #     chunk_size = self.chunk_size
-    #     n_chunks_per_column = n_columns * n_chunks
-    #     data =  self.data 
-        
-    #     coord = []
-    #     i = 0
-    #     j = 0
-    #     current_label = None
-    #     for _r in result:
-    #         r = _r['data']
-    #         if labels is not None:
-    #             if current_label == None:
-    #                 current_label = r[3]
-    #             if current_label != r[3]:
-    #                 current_label = r[3]
-    #                 j = 0
-    #                 i += 1
-    #         width = (r[2] - r[1]) // chunk_size
-    #         if (j + width) > n_chunks_per_column:
-    #             j = 0
-    #             i += 1
-    #         coord.append([i,j])
-    #         j += width
+    def visualize(self, clusters, labels_order=None, n_cols=5, chart_width=260, chart_height=140,
+                  padding=50, n_ticks=3, interpolate=500, mode="lines", opacity=0.6,
+                  show_main_trend=True, central_line_px=(1.5, 3.5), path=None, show=True,
+                  backend="glfw", density="auto"):
+        """Render the mined patterns as a static image (same picture as TSVis.widget).
 
-    #     n_rows = i + 1
-        
-    #     fig = plt.figure(figsize=( chart_width * n_columns,n_rows * chart_height),dpi=dpi)
-    #     gs = fig.add_gridspec(n_rows, n_chunks_per_column,wspace=10, hspace=0.4)
-    #     fig.tight_layout()
+        Runs output_result() on `clusters` and draws it with
+        TSVis.offscreen.TimeSeriesVisOffscreen, so it works outside Jupyter and
+        from scripts/CLIs. Labels are picked up automatically when
+        optimize_patterns() was called with `labels=`.
 
-    #     for i,_r in tqdm(enumerate(result)):
-    #         r = _r['data']
-    #         if labels is not None:
-    #             color = _r['color']
-    #         else:
-    #             color = '#6388b4'
-    #         width = (r[2] - r[1]) // chunk_size
-    #         subset = data[r[0],r[1]:r[2]]
-    #         x = np.arange(r[1],r[2])
-    #         axs = fig.add_subplot(gs[coord[i][0], coord[i][1]: coord[i][1] + width])
-    #         axs.set_xlim(r[1],r[2])
-    #         axs.set_ylim(np.min(self.data),np.max(self.data))
-    #         axs.set_xticks([x[0],x[-1]])
-    #         axs.set_xticklabels([r[1],r[2]])
-    #         axs.set_yticklabels([])
-    #         axs.tick_params(axis='x', labelsize= 3)
-            
-    #         random_indice = np.random.choice(np.arange(subset.shape[0]), min(50,subset.shape[0]), replace=False)
-    #         centroid = subset[random_indice][get_average_sequence(subset[random_indice]),:]
-    #         centroid = np.trim_zeros(centroid)
-    #         # print(centroid)
-    #         if show_main_trend:
-    #             upper_bound = np.max(subset,axis=0)
-    #             lower_bound = np.min(subset,axis=0)
-    #             axs.fill_between(x,upper_bound,lower_bound,alpha=0.3,color=color)
-    #             axs.plot(centroid,color=color)
-    #         else:
-    #             lines = []
-    #             for y in subset:
-    #                 _y = np.trim_zeros(y,'b')
-    #                 _x = x[:_y.shape[0]]
-    #                 lines.append(np.column_stack([_x,_y]))
-    #             line_segments = LineCollection(lines,color=color,alpha=alpha)
-    #             axs.add_collection(line_segments)
-    #             scale = 5 * (subset.shape[0] - min_size) / (max_size - min_size) + 1 *(1 - (subset.shape[0] - min_size) / (max_size - min_size))
-    #             # print(scale)
-    #             # axs.plot(centroid,color='black',linewidth=scale)
+        mode             "lines" (line density), "bands" (quantile bands) or "both"
+        opacity          darkness of each chart's dense core (density="auto"), or the
+                         per-line alpha when density="linear" (the widget's behaviour)
+        show_main_trend  draw the black DTW-average central line
+        path             write a PNG here (for mode="both" a second file gets "_bands")
+        show             display inline in Jupyter, or via matplotlib elsewhere
+        returns          {"image": HxWx4 uint8 (lines or bands), "image_bands": ...,
+                          "summary": per-chart JSON-able dict, "result": output_result()}
+        """
+        from TSVis.offscreen import TimeSeriesVisOffscreen
 
-    #     plt.show()
+        result = self.output_result(clusters, show_main_trend=show_main_trend, return_idx=True)
+        labels = result.get("labels") or None
+        vis = TimeSeriesVisOffscreen(n_cols=n_cols, padding=padding, n_ticks=n_ticks,
+                                     chart_width=chart_width, chart_height=chart_height,
+                                     interpolate=interpolate, central_line_px=central_line_px,
+                                     backend=backend)
+        vis.fit(result["result"], labels=labels, labels_order=labels_order,
+                central_line=result.get("center_line") if show_main_trend else None)
+
+        out = {"result": result, "summary": vis.summary()}
+        images = []
+        if mode in ("lines", "both"):
+            p = path if (path and mode == "lines") else (path.rsplit(".", 1)[0] + ".png" if path else None)
+            out["image"] = vis.render(p, show_lines=True, opacity=opacity, density=density)
+            images.append(out["image"])
+        if mode in ("bands", "both"):
+            p = None
+            if path:
+                stem = path.rsplit(".", 1)[0]
+                p = path if mode == "bands" else stem + "_bands.png"
+            out["image_bands"] = vis.render(p, show_lines=False)
+            if "image" not in out:
+                out["image"] = out["image_bands"]
+            images.append(out["image_bands"])
+
+        if show:
+            self._show_images(images)
+        return out
+
+    @staticmethod
+    def _show_images(images):
+        try:
+            get_ipython()  # noqa: F821  (defined only inside IPython/Jupyter)
+            in_ipython = True
+        except NameError:
+            in_ipython = False
+        if in_ipython:
+            import io
+            from IPython.display import display, Image as IPyImage
+            from PIL import Image
+            for img in images:
+                buf = io.BytesIO()
+                Image.fromarray(img).save(buf, format="PNG")
+                display(IPyImage(data=buf.getvalue()))
+        else:
+            for img in images:
+                h, w = img.shape[:2]
+                fig = plt.figure(figsize=(w / 200, h / 200), dpi=100)
+                ax = fig.add_axes([0, 0, 1, 1])
+                ax.imshow(img)
+                ax.axis("off")
+            plt.show()
     
