@@ -42,6 +42,11 @@ canvas
  ```
 
  3. Install the remaining dependencies: ```pip install -r requirements.txt```
+
+    TiVy calls dtaidistance's C routine (`dtw.distance_matrix_fast`). On recent Pythons the PyPI wheel has no C library, and a default (isolated) source build compiles against a newer numpy than the pinned one and fails at runtime with `module 'dtaidistance' has no attribute 'DTWSeriesMatrix'`. If `python -c "from dtaidistance import dtw; print(dtw.try_import_c())"` prints `False` or TiVy raises either error, rebuild it against the installed numpy (needs a C compiler):
+    ```
+    pip install --force-reinstall --no-deps --no-build-isolation --no-binary dtaidistance --no-cache-dir dtaidistance==2.3.13
+    ```
     
  4. To use the library, simply copy the `TSVis` folder and `TiVy.py` to your working directory.
  

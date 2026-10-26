@@ -10,7 +10,12 @@
 # F fusion, Q unknown. The flat tail at zero is the dataset's zero padding.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=${PYTHON:-$([ -x tivy_env/bin/python ] && echo tivy_env/bin/python || echo python)}
+# python: $PYTHON, else a local virtualenv (.venv or tivy_env), else python3
+PY=${PYTHON:-}
+if [ -z "$PY" ]; then
+    for c in .venv/bin/python tivy_env/bin/python; do [ -x "$c" ] && PY=$c && break; done
+    PY=${PY:-python3}
+fi
 CSV_DIR=${1:?usage: examples/run_ecg.sh CSV_DIR [OUT_PREFIX]}
 OUT=${2:-examples/out/ecg}
 NPZ="$(dirname "$OUT")/ecg.npz"

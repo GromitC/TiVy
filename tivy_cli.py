@@ -28,7 +28,11 @@ import numpy as np
 warnings.filterwarnings("ignore")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+# Repo layout: TiVy.py / TSVis next to this file. Standalone skill layout: under lib/.
+for _p in (HERE, os.path.join(HERE, "lib")):
+    if os.path.exists(os.path.join(_p, "TiVy.py")):
+        sys.path.insert(0, _p)
+        break
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +236,8 @@ def add_data_args(p):
     g.add_argument("--label-col", type=int, default=None,
                    help="column index holding a per-series label (e.g. -1 for last)")
     g.add_argument("--labels", default=None, help="separate file (.npy/.csv/.txt) with one label per series")
+    g.add_argument("--no-labels", action="store_true",
+                   help="ignore labels found in the data file (mine all series together)")
     g.add_argument("--transpose", action="store_true", help="input is time x series")
     g.add_argument("--max-length", type=int, default=None, help="truncate series to this many points")
 
@@ -294,6 +300,8 @@ def main(argv=None):
             if lab is None:
                 lab = np.loadtxt(a.labels, dtype=str, delimiter=",").ravel()
             labels = np.asarray(lab).ravel().astype(str)
+        if a.no_labels:
+            labels = None
         if labels is not None and len(labels) != data.shape[0]:
             raise SystemExit(f"{len(labels)} labels for {data.shape[0]} series")
         print(f"loaded {data.shape[0]} series x {data.shape[1]} points"

@@ -7,7 +7,12 @@
 # OUT_PREFIX.json (per-chart numbers) and OUT_PREFIX.pkl (re-renderable result).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=${PYTHON:-$([ -x tivy_env/bin/python ] && echo tivy_env/bin/python || echo python)}
+# python: $PYTHON, else a local virtualenv (.venv or tivy_env), else python3
+PY=${PYTHON:-}
+if [ -z "$PY" ]; then
+    for c in .venv/bin/python tivy_env/bin/python; do [ -x "$c" ] && PY=$c && break; done
+    PY=${PY:-python3}
+fi
 OUT=${1:-examples/out/synthetic}
 
 "$PY" tivy_cli.py demo --out "$OUT" --n-cols 4 \
