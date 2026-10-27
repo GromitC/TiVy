@@ -318,6 +318,9 @@ class TimeSeriesVisOffscreen(TimeSeriesVis):
                 }
             if self.labels is not None:
                 row["label"] = str(self.labels[i])
+            if self.x_domain is not None:
+                xd = list(self.x_domain)
+                row["interval_labels"] = [str(xd[min(start, len(xd) - 1)]), str(xd[min(end, len(xd) - 1)])]
             if self.central_line is not None:
                 cl = np.asarray(self.central_line[i], dtype=float)
                 valid = cl[~np.isnan(cl)]
@@ -331,6 +334,7 @@ class TimeSeriesVisOffscreen(TimeSeriesVis):
             "n_cols": self.n_cols,
             "n_rows": self.n_rows,
             "x_limit": int(self.x_limit),
+            "x_labels": ([str(self.x_domain[0]), str(self.x_domain[-1])] if self.x_domain is not None else None),
             "y_limit": [float(self.y_limit[0]), float(self.y_limit[1])],
             "charts": rows,
         }

@@ -696,7 +696,7 @@ class TiVy():
     def visualize(self, clusters, labels_order=None, n_cols=5, chart_width=260, chart_height=140,
                   padding=50, n_ticks=3, interpolate=500, mode="lines", opacity=0.6,
                   show_main_trend=True, central_line_px=(1.5, 3.5), path=None, show=True,
-                  backend="glfw", density="auto"):
+                  backend="glfw", density="auto", x_domain=None):
         """Render the mined patterns as a static image (same picture as TSVis.widget).
 
         Runs output_result() on `clusters` and draws it with
@@ -708,6 +708,7 @@ class TiVy():
         opacity          darkness of each chart's dense core (density="auto"), or the
                          per-line alpha when density="linear" (the widget's behaviour)
         show_main_trend  draw the black DTW-average central line
+        x_domain         one label per time point (e.g. dates) for the x-axis ticks
         path             write a PNG here (for mode="both" a second file gets "_bands")
         show             display inline in Jupyter, or via matplotlib elsewhere
         returns          {"image": HxWx4 uint8 (lines or bands), "image_bands": ...,
@@ -720,7 +721,7 @@ class TiVy():
         vis = TimeSeriesVisOffscreen(n_cols=n_cols, padding=padding, n_ticks=n_ticks,
                                      chart_width=chart_width, chart_height=chart_height,
                                      interpolate=interpolate, central_line_px=central_line_px,
-                                     backend=backend)
+                                     backend=backend, x_domain=x_domain)
         vis.fit(result["result"], labels=labels, labels_order=labels_order,
                 central_line=result.get("center_line") if show_main_trend else None)
 

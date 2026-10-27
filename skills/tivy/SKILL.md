@@ -43,13 +43,25 @@ or `--labels FILE` for per-series class labels, `--no-labels` to ignore labels
 in the file, `--max-length` to trim long series. NaNs are not accepted; fill
 or trim first.
 
+**X-axis labels (dates).** Tick labels show real time stamps instead of
+indices whenever the data carries them: an `.npz`/pickle key named `dates`,
+`x`, `time`, `timestamps` or `x_labels` with one entry per time point, or the
+column header of a wide CSV read with `--header`. Otherwise pass
+`--x-labels FILE` (one label per line, or `.npy`/`.npz`). Date-like labels
+are shortened automatically (`--x-date-format auto`: same year -> `Jan 02`,
+several years -> `2026-01`; or give a strftime pattern, or `none`). Labels
+are stored in the `.pkl`, so `render` keeps them, and the JSON reports each
+chart's `interval_labels` (start and end dates) next to the index interval.
+When you prepare data yourself, save the dates: `np.savez(out, data=X,
+labels=classes, dates=date_strings)`.
+
 Outputs for `--out out/summary`:
 
 | file | what |
 |---|---|
 | `out/summary.png` | line-density view, the widget default |
 | `out/summary_bands.png` | 90% (blue) and full-range (grey) quantile bands |
-| `out/summary.json` | per-chart: label, n_series, interval, y range, central line start/end |
+| `out/summary.json` | per-chart: label, n_series, interval (+ `interval_labels` when dates are known), y range, central line start/end |
 | `out/summary.pkl` | mined result, re-renderable with `render` without re-mining |
 
 After a run, **Read the PNG** to look at the patterns and **Read the JSON** for
@@ -84,8 +96,8 @@ The short version:
 - Chart options: `--n-cols`, `--chart-width/height`, `--opacity` (darkness of
   each chart's dense core; raise toward 0.85 when faint), `--density auto|linear`,
   `--mode lines|bands|both`, `--no-central-line`, `--central-line-px 1.5 3.5`,
-  `--labels-order N,SVEB,VEB`. These never change what is mined; iterate with
-  `render` on the saved `.pkl`.
+  `--labels-order N,SVEB,VEB`, `--x-labels FILE`, `--x-date-format`. These
+  never change what is mined; iterate with `render` on the saved `.pkl`.
 
 ## Interpreting
 

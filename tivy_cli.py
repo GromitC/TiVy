@@ -38,22 +38,32 @@ for _p in (HERE, os.path.join(HERE, "lib")):
 # ---------------------------------------------------------------------------
 # data loading
 # ---------------------------------------------------------------------------
+X_LABEL_KEYS = ("dates", "x_labels", "x", "time", "timestamps", "columns")
+
+
 def load_data(path, header=False, label_col=None, transpose=False, max_length=None):
+    """Return (data, labels, x_labels). x_labels: one label per time point when
+    the file carries them (npz/pickle key in X_LABEL_KEYS, or a CSV header)."""
     ext = os.path.splitext(path)[1].lower()
-    labels = None
+    labels, x_labels = None, None
     if ext == ".npy":
         arr = np.load(path, allow_pickle=True)
     elif ext == ".npz":
         z = np.load(path, allow_pickle=True)
-        arr = z[z.files[0]]
+        arr = z["data"] if "data" in z.files else z[z.files[0]]
         if "labels" in z.files:
             labels = z["labels"]
+        for k in X_LABEL_KEYS:
+            if k in z.files:
+                x_labels = z[k]
+                break
     elif ext in (".pkl", ".pickle"):
         with open(path, "rb") as fh:
             obj = pickle.load(fh)
         if isinstance(obj, dict):
             arr = np.asarray(obj["data"])
             labels = obj.get("labels")
+            x_labels = next((obj[k] for k in X_LABEL_KEYS if k in obj), None)
         else:
             arr = np.asarray(obj)
     elif ext in (".csv", ".tsv", ".txt"):
@@ -61,6 +71,10 @@ def load_data(path, header=False, label_col=None, transpose=False, max_length=No
         sep = "\t" if ext == ".tsv" else (None if ext == ".txt" else ",")
         df = pd.read_csv(path, header=0 if header else None, sep=sep, engine="python")
         arr = df.to_numpy()
+        if header and not transpose:
+            x_labels = np.asarray(df.columns).astype(str)      # column names = time points
+        elif header and transpose:
+            labels = np.asarray(df.columns).astype(str)        # column names = series
     else:
         raise SystemExit(f"unsupported data format: {ext}")
 
@@ -72,23 +86,61 @@ def load_data(path, header=False, label_col=None, transpose=False, max_length=No
     if label_col is not None:
         labels = arr[:, label_col]
         arr = np.delete(arr, label_col, axis=1)
+        if x_labels is not None and len(x_labels) == arr.shape[1] + 1:
+            x_labels = np.delete(np.asarray(x_labels), label_col)
     arr = arr.astype(float)
     if arr.ndim != 2:
         raise SystemExit(f"expected a 2-D array (series x time), got shape {arr.shape}")
     if max_length is not None:
         arr = arr[:, :max_length]
+        if x_labels is not None:
+            x_labels = np.asarray(x_labels)[:max_length]
     if labels is not None:
         labels = np.asarray(labels)
         if np.issubdtype(labels.dtype, np.floating) and np.all(np.mod(labels, 1) == 0):
             labels = labels.astype(int)
         labels = labels.astype(str)
-    return arr, labels
+    if x_labels is not None:
+        x_labels = np.asarray(x_labels).astype(str)
+        if len(x_labels) != arr.shape[1]:
+            print(f"warning: {len(x_labels)} x labels for {arr.shape[1]} time points; ignoring them")
+            x_labels = None
+    return arr, labels, x_labels
+
+
+def load_x_labels(path):
+    """One x-axis label per time point from .npy / .npz / .txt / .csv (one per line or first column)."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".npy":
+        v = np.load(path, allow_pickle=True)
+    elif ext == ".npz":
+        z = np.load(path, allow_pickle=True)
+        v = next((z[k] for k in X_LABEL_KEYS if k in z.files), z[z.files[0]])
+    else:
+        import pandas as pd
+        v = pd.read_csv(path, header=None).iloc[:, 0].to_numpy()
+    return np.asarray(v).ravel().astype(str)
+
+
+def format_x_labels(x_labels, fmt="auto"):
+    """Shorten date-like labels. fmt: 'none' (raw), 'auto' (same year -> 'Jan 02',
+    several years -> '2026-01'), or a strftime pattern."""
+    if x_labels is None or fmt == "none":
+        return None if x_labels is None else [str(x) for x in x_labels]
+    import pandas as pd
+    try:
+        dt = pd.to_datetime(list(x_labels), errors="raise")
+    except Exception:
+        return [str(x) for x in x_labels]
+    if fmt == "auto":
+        fmt = "%b %d" if dt.year.nunique() == 1 else "%Y-%m"
+    return [d.strftime(fmt) for d in dt]
 
 
 # ---------------------------------------------------------------------------
 # mining
 # ---------------------------------------------------------------------------
-def mine(data, labels, a):
+def mine(data, labels, a, x_labels=None):
     from TiVy import TiVy
 
     if data.shape[1] < a.chunk_size:
@@ -126,6 +178,8 @@ def mine(data, labels, a):
         "n_series": int(data.shape[0]), "n_timepoints": int(data.shape[1]),
     }
     result["timings"] = timings
+    if x_labels is not None:
+        result["x_domain"] = [str(x) for x in x_labels]     # raw labels; formatted at render time
     return result
 
 
@@ -153,10 +207,19 @@ def render(result, prefix, a):
     central = result.get("center_line") if not a.no_central_line else None
     labels_order = a.labels_order.split(",") if (a.labels_order and labels is not None) else None
 
+    # x-axis labels: --x-labels file wins, else whatever the data file carried
+    x_raw = load_x_labels(a.x_labels) if getattr(a, "x_labels", None) else result.get("x_domain")
+    n_t = result["result"][0].shape[1]
+    if x_raw is not None and len(x_raw) != n_t:
+        print(f"warning: {len(x_raw)} x labels for {n_t} time points; using indices")
+        x_raw = None
+    x_domain = format_x_labels(x_raw, getattr(a, "x_date_format", "auto"))
+
     t = time.time()
     vis = TimeSeriesVisOffscreen(n_cols=a.n_cols, padding=a.padding, n_ticks=a.n_ticks,
                                  chart_width=a.chart_width, chart_height=a.chart_height,
-                                 interpolate=a.interpolate, central_line_px=tuple(a.central_line_px))
+                                 interpolate=a.interpolate, central_line_px=tuple(a.central_line_px),
+                                 x_domain=x_domain)
     vis.fit(result["result"], labels=labels, labels_order=labels_order, central_line=central)
     fit_s = round(time.time() - t, 2)
 
@@ -189,8 +252,10 @@ def render(result, prefix, a):
 
 
 def print_summary(s):
+    xl = s.get("x_labels")
+    axis = f"time axis {xl[0]} .. {xl[1]} ({s['x_limit']} points)" if xl else f"time axis 0..{s['x_limit']}"
     print(f"TiVy summary: {s['n_charts']} pattern charts, grid {s['n_rows']}x{s['n_cols']}, "
-          f"time axis 0..{s['x_limit']}, y range {s['y_limit'][0]:.3g}..{s['y_limit'][1]:.3g}")
+          f"{axis}, y range {s['y_limit'][0]:.3g}..{s['y_limit'][1]:.3g}")
     for c in s["charts"]:
         lab = f" [{c['label']}]" if "label" in c else ""
         if "label_mix" in c:
@@ -199,7 +264,10 @@ def print_summary(s):
         trend = ""
         if "central_line_change" in c:
             trend = f", central line {c['central_line_start']:.3g} -> {c['central_line_end']:.3g}"
-        print(f"  chart {c['chart']:>2}{lab}: {c['n_series']:>5} series, t={c['interval'][0]}..{c['interval'][1]}"
+        span = f"t={c['interval'][0]}..{c['interval'][1]}"
+        if "interval_labels" in c:
+            span = f"{c['interval_labels'][0]} .. {c['interval_labels'][1]} ({span})"
+        print(f"  chart {c['chart']:>2}{lab}: {c['n_series']:>5} series, {span}"
               f", y {c['y_min']:.3g}..{c['y_max']:.3g}{trend}")
     for k, v in s["files"].items():
         print(f"  {k}: {v}")
@@ -228,6 +296,13 @@ def add_chart_args(p):
                    help="central line thickness in px for the smallest and largest chart")
     g.add_argument("--no-central-line", action="store_true")
     g.add_argument("--labels-order", default=None, help="comma-separated row order for labels")
+    g.add_argument("--x-labels", default=None, metavar="FILE",
+                   help="one x-axis label per time point (.txt/.csv one per line, .npy, .npz); "
+                        "by default labels found in the data file are used (npz/pickle key "
+                        "'dates'/'x'/'time'/..., or a CSV header)")
+    g.add_argument("--x-date-format", default="auto",
+                   help="format for date-like x labels: 'auto' (same year -> 'Jan 02', else '2026-01'), "
+                        "'none' (raw text), or a strftime pattern such as %%Y-%%m-%%d")
 
 
 def add_data_args(p):
@@ -293,21 +368,22 @@ def main(argv=None):
         data = np.concatenate([g / np.max(np.abs(g)) * 30 for g in groups])
         labels = np.concatenate([[n] * len(g) for n, g in zip(names, groups)])
         print(f"demo data: {data.shape[0]} series x {data.shape[1]} points, groups: {names}")
+        x_labels = None
     else:
-        data, labels = load_data(a.data, a.header, a.label_col, a.transpose, a.max_length)
+        data, labels, x_labels = load_data(a.data, a.header, a.label_col, a.transpose, a.max_length)
         if a.labels:
-            lab, _ = load_data(a.labels, False, None, False, None) if a.labels.endswith(".npy") else (None, None)
-            if lab is None:
-                lab = np.loadtxt(a.labels, dtype=str, delimiter=",").ravel()
+            lab = np.load(a.labels, allow_pickle=True) if a.labels.endswith(".npy") \
+                else np.loadtxt(a.labels, dtype=str, delimiter=",")
             labels = np.asarray(lab).ravel().astype(str)
         if a.no_labels:
             labels = None
         if labels is not None and len(labels) != data.shape[0]:
             raise SystemExit(f"{len(labels)} labels for {data.shape[0]} series")
         print(f"loaded {data.shape[0]} series x {data.shape[1]} points"
-              + (f", {len(np.unique(labels))} label classes" if labels is not None else ""))
+              + (f", {len(np.unique(labels))} label classes" if labels is not None else "")
+              + (f", x labels {x_labels[0]} .. {x_labels[-1]}" if x_labels is not None else ""))
 
-    result = mine(data, labels, a)
+    result = mine(data, labels, a, x_labels)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out + ".pkl", "wb") as fh:
         pickle.dump(result, fh)

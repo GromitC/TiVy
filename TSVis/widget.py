@@ -445,7 +445,10 @@ class TimeSeriesVis():
         else:
             x_ticks = np.linspace(0,self.x_limit,int((self.x_limit+1)/math.floor((self.x_limit+1)/self.n_ticks))).astype(int)
         if self.x_domain is not None:
-            x_ticks = np.array(self.x_domain)[x_ticks[:-1]].astype(str).tolist()
+            # map tick positions to the caller's labels; the last tick sits at x_limit,
+            # one past the final label, so clamp instead of dropping it
+            idx = np.clip(np.asarray(x_ticks, dtype=int), 0, len(self.x_domain) - 1)
+            x_ticks = np.array(self.x_domain)[idx].astype(str).tolist()
         else:
             x_ticks = x_ticks.astype(str).tolist()
         #offset
